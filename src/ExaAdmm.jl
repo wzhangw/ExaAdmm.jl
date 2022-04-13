@@ -33,4 +33,15 @@ include("gpu/bus_kernel_gpu.jl")
 include("gpu/acopf_admm_gpu.jl")
 include("gpu/acopf_admm_rolling_gpu.jl")
 
+include("common/uc/uc_opfdata.jl")
+include("common/uc/uc_environment.jl")
+include("common/uc/uc_acopf_admm.jl")
+include("common/uc/uc_check_violations.jl")
+
+include("gpu/uc/uc_init_solution_gpu.jl")
+include("gpu/uc/uc_generator_kernel_gpu.jl")
+include("gpu/uc/uc_acopf_admm_gpu.jl")
+include("gpu/uc/uc_bus_kernel_gpu.jl")
+include("gpu/uc/uc_auglag_linelimit_kernel_gpu.jl")
+
 end # module

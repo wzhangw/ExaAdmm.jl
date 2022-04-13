@@ -34,7 +34,7 @@ end
 struct UCOPFData
   buses::Array{Bus}
   lines::Array{Line}
-  load::Load{Matrix{Float64}}
+  load::Load
   generators::Array{UCGener}
   bus_ref::Int
   baseMVA::Float64
@@ -160,7 +160,23 @@ function uc_opf_loaddata_matpower(case_name, load_prefix, lineOff=Line(); VI=Arr
   end
 
   # Read load profiles
-  load = get_load(load_prefix)
+  # TEMPORARY: REPLACE WITH CONSTANT LOAD LEVEL FOR NOW
+  # load = get_load(load_prefix)
+  pd_mat = zeros(nbus, 24)
+  qd_mat = zeros(nbus, 24)
+  for t in 1:24
+    for i in 1:nbus
+      pd_mat[i, t] = buses[i].Pd
+      qd_mat[i, t] = buses[i].Qd
+    end
+  end
+  load = Load{CuArray{Float64,2}}(pd_mat, qd_mat)
+  # if use_gpu
+  #   load = Load{CuArray{Float64,2}}(pd_mat, qd_mat)
+  # else
+  #   load = Load{Array{Float64,2}}(pd_mat, qd_mat)
+  # end
+
 
   # build a dictionary between buses ids and their indexes
   busIdx = mapBusIdToIdx(buses)
@@ -254,8 +270,8 @@ function get_bus_data(data::UCOPFData; use_gpu=false)
   ToStart = accumulate(+, vcat([1], [length(data.ToLines[b]) for b=1:nbus]))
   GenStart = accumulate(+, vcat([1], [length(data.BusGenerators[b]) for b=1:nbus]))
 
-  # Pd = Float64[j for i=1:nbus for j in data.buses[i].Pd]
-  # Qd = Float64[j for i=1:nbus for j in data.buses[i].Pd]
+  Pd = Float64[j for i=1:nbus for j in data.buses[i].Pd]
+  Qd = Float64[j for i=1:nbus for j in data.buses[i].Qd]
   Vmin = Float64[data.buses[i].Vmin for i=1:nbus]
   Vmax = Float64[data.buses[i].Vmax for i=1:nbus]
 
@@ -266,8 +282,8 @@ function get_bus_data(data::UCOPFData; use_gpu=false)
       cuFrStart = CuArray{Int}(undef, length(FrStart))
       cuToStart = CuArray{Int}(undef, length(ToStart))
       cuGenStart = CuArray{Int}(undef, length(GenStart))
-      # cuPd = CuArray{Float64}(undef, nbus*T)
-      # cuQd = CuArray{Float64}(undef, nbus*T)
+      cuPd = CuArray{Float64}(undef, nbus)
+      cuQd = CuArray{Float64}(undef, nbus)
       cuVmax = CuArray{Float64}(undef, nbus)
       cuVmin = CuArray{Float64}(undef, nbus)
 
@@ -277,16 +293,14 @@ function get_bus_data(data::UCOPFData; use_gpu=false)
       copyto!(cuFrStart, FrStart)
       copyto!(cuToStart, ToStart)
       copyto!(cuGenStart, GenStart)
-      # copyto!(cuPd, Pd)
-      # copyto!(cuQd, Qd)
+      copyto!(cuPd, Pd)
+      copyto!(cuQd, Qd)
       copyto!(cuVmax, Vmax)
       copyto!(cuVmin, Vmin)
 
-      # return cuFrStart,cuFrIdx,cuToStart,cuToIdx,cuGenStart,cuGenIdx,cuPd,cuQd,cuVmin,cuVmax
-      return cuFrStart,cuFrIdx,cuToStart,cuToIdx,cuGenStart,cuGenIdx,cuVmin,cuVmax
+      return cuFrStart,cuFrIdx,cuToStart,cuToIdx,cuGenStart,cuGenIdx,cuPd,cuQd,cuVmin,cuVmax
   else
-      # return FrStart,FrIdx,ToStart,ToIdx,GenStart,GenIdx,Pd,Qd,Vmin,Vmax
-      return FrStart,FrIdx,ToStart,ToIdx,GenStart,GenIdx,Vmin,Vmax
+      return FrStart,FrIdx,ToStart,ToIdx,GenStart,GenIdx,Pd,Qd,Vmin,Vmax
   end
 end
 

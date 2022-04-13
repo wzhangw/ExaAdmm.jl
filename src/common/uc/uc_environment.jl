@@ -25,7 +25,7 @@ mutable struct UCAdmmEnv{T,TD,TI,TM} <: AbstractAdmmEnv{T,TD,TI,TM}
     ) where {T, TD<:AbstractArray{T}, TI<:AbstractArray{Int}, TM<:AbstractArray{T,2}}
         env = new{T,TD,TI,TM}()
         env.case = case
-        env.data = uc_opf_loaddata(env.case; VI=TI, VD=TD, case_format=case_format)
+        env.data = uc_opf_loaddata(env.case, load_prefix; VI=TI, VD=TD, case_format=case_format)
         env.initial_rho_pq = rho_pq
         env.initial_rho_va = rho_va
         env.tight_factor = tight_factor
@@ -57,7 +57,7 @@ end
 mutable struct UCModel{T,TD,TI,TM} <: AbstractOPFModel{T,TD,TI,TM}
     solution::AbstractSolution{T,TD}
 
-    T::Int
+    t::Int
     n::Int
     ngen::Int
     nline::Int
@@ -130,6 +130,7 @@ mutable struct UCModel{T,TD,TI,TM} <: AbstractOPFModel{T,TD,TI,TM}
         model.nline = length(env.data.lines)
         model.nbus = length(env.data.buses)
         model.nline_padded = model.nline
+        model.t = 2
 
         # Memory space is padded for the lines as a multiple of # processes.
         if env.use_mpi
@@ -137,16 +138,16 @@ mutable struct UCModel{T,TD,TI,TM} <: AbstractOPFModel{T,TD,TI,TM}
             model.nline_padded = nprocs * div(model.nline, nprocs, RoundUp)
         end
 
-        model.nvar = 2*model.ngen + 8*model.nline
+        model.nvar = 2*model.ngen*model.t + 8*model.nline*model.t
         model.nvar_padded = model.nvar + 8*(model.nline_padded - model.nline)
         model.gen_start = 1
-        model.line_start = 2*model.ngen + 1
+        model.line_start = 2*model.ngen*model.t + 1
         model.pgmin, model.pgmax, model.qgmin, model.qgmax, model.c2, model.c1, model.c0, model.ru, model.rd, model.minUp, model.minDown = get_generator_data(env.data; use_gpu=env.use_gpu)
         model.YshR, model.YshI, model.YffR, model.YffI, model.YftR, model.YftI,
             model.YttR, model.YttI, model.YtfR, model.YtfI,
             model.FrVmBound, model.ToVmBound,
             model.FrVaBound, model.ToVaBound, model.rateA = get_branch_data(env.data; use_gpu=env.use_gpu, tight_factor=env.tight_factor)
-        model.FrStart, model.FrIdx, model.ToStart, model.ToIdx, model.GenStart, model.GenIdx, model.Vmin, model.Vmax = get_bus_data(env.data; use_gpu=env.use_gpu)
+        model.FrStart, model.FrIdx, model.ToStart, model.ToIdx, model.GenStart, model.GenIdx, model.Pd, model.Qd, model.Vmin, model.Vmax = get_bus_data(env.data; use_gpu=env.use_gpu)
         model.brBusIdx = get_branch_bus_index(env.data; use_gpu=env.use_gpu)
 
         model.pgmin_curr = TD(undef, model.ngen)
@@ -164,10 +165,10 @@ mutable struct UCModel{T,TD,TI,TM} <: AbstractOPFModel{T,TD,TI,TM}
         end
 
         # These are only for two-level ADMM.
-        model.nvar_u = 2*model.ngen + 8*model.nline
+        model.nvar_u = 2*model.ngen*model.t + 8*model.nline*model.t
         model.nvar_u_padded = model.nvar_u + 8*(model.nline_padded - model.nline)
-        model.nvar_v = 2*model.ngen + 4*model.nline + 2*model.nbus
-        model.bus_start = 2*model.ngen + 4*model.nline + 1
+        model.nvar_v = 2*model.ngen*model.t + 4*model.nline*model.t + 2*model.nbus*model.t
+        model.bus_start = 2*model.ngen*model.t + 4*model.nline*model.t + 1
         if env.use_twolevel
             model.nvar = model.nvar_u + model.nvar_v
             model.nvar_padded = model.nvar_u_padded + model.nvar_v
@@ -179,7 +180,7 @@ mutable struct UCModel{T,TD,TI,TM} <: AbstractOPFModel{T,TD,TI,TM}
             SolutionOneLevel{T,TD}(model.nvar_padded))
         init_solution!(model, model.solution, env.initial_rho_pq, env.initial_rho_va)
 
-        model.membuf = TM(undef, (31, model.nline))
+        model.membuf = TM(undef, (31, model.nline*model.t))
         fill!(model.membuf, 0.0)
 
         return model
